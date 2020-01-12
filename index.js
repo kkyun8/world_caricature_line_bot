@@ -9,14 +9,18 @@ const fs = require('fs');
 const mysql = require('mysql');
 const bodyParser = require('body-parser');
 const Request = require('request');
+const MessageDesign = require('./module/messageDesign');
+const PaymentJson =require('./module/messageJson/payment.json')
+const Query = require('./module/query');
 const PORT = process.env.PORT;
+const WEB_USER = process.env.WEB_USER;
 
 const config = {
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.CHANNEL_SECRET
 };
 
-let connection = mysql.createConnection({
+const connection = mysql.createConnection({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
@@ -46,7 +50,7 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 const client = new line.Client(config);
 
 //handleEvent
-function handleEvent(event) {
+async function handleEvent(event) {
 
   //画像取得してすぐデータ保存S3
   if (event.message.type === 'image') {
@@ -70,7 +74,7 @@ function handleEvent(event) {
           fs.writeFileSync(`./image.jpg`, new Buffer(body), 'binary');
           console.log('file saved');
       } else {
-          // @todo handle error
+          // TODO: handle error
       }
     });
 
@@ -86,14 +90,22 @@ function handleEvent(event) {
 
   }else if (event.type === 'message'){
     let returnMessage = ''
-
+    console.log('get message')
     //event.message.textに注文番号
     if (event.message.text.indexOf('注文番号確認') >= 0) {
       returnMessage = '注文番号を確認します。'
+      if(event.source.type == 'user') {
+
+      }
+      const sqlResult = await Query.checkOrderNumber(event.source.userId,connection)
+      const createMessage = await MessageDesign.createPaymentMessage(sqlResult,PaymentJson)
+
+      return client.replyMessage(event.replyToken, createMessage);
     }else{
-      returnMessage = 'なし'
+      returnMessage = 'メッセージなし'
     }
-  
+ 
+    
     return client.replyMessage(event.replyToken, {
       type: 'text',
       text: returnMessage
@@ -109,16 +121,6 @@ function handleEvent(event) {
 
 }
 
-function checkOrderNumber(userId){
-  //mysql select
-  let result = 'database_error'
-  connection.query('select name from sample_images where id = 1', function (error, results, fields) {
-    if (error) throw error;
-    result = results[0]
-  });
-  
-  console.log(result)
-}
 
 app.listen(PORT);
 console.log(`Server running at ${PORT}`);
