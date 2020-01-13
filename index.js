@@ -11,7 +11,7 @@ const bodyParser = require('body-parser');
 const Request = require('request');
 const MessageDesign = require('./module/messageDesign');
 const PaymentJson =require('./module/messageJson/payment.json')
-const Query = require('./module/query');
+const mysqlConnection = require('./module/mysqlConnection');
 const PORT = process.env.PORT;
 const WEB_USER = process.env.WEB_USER;
 
@@ -28,6 +28,14 @@ const connection = mysql.createConnection({
 });
 
 const app = express();
+
+async function getMessageData(userId) {
+  console.log("getMessageData実行")
+  // TODO: １個以上の注文の場合、メッセージ対応
+  const sqlResult = await mysqlConnection.query(connection,  'SELECT s.name,s.information, o.order_number, o.price, o.name_kanji, o.name_furigana, o.postal_code, o.address1, o.address2 FROM orders o, sample_images s WHERE o.line_id = ? AND o.sample_image_id = s.id ORDER BY o.id DESC LIMIT 1',[userId]);
+  const createMessage = await MessageDesign.createPaymentMessage(sqlResult,PaymentJson);
+  return createMessage;
+}
 
 //ブラウザ確認用(無くても問題ない)
 app.get('/', (req, res) => res.send('Hello LINE BOT!(GET)')); 
@@ -68,13 +76,15 @@ async function handleEvent(event) {
       encoding: null
     };
     
-    Request(options, function(error, response, body) {
+    await Request(options, function(error, response, body) {
       if (!error && response.statusCode == 200) {
-          //保存
+          //ローカル保存
+          //TODO: AWS S3保存
           fs.writeFileSync(`./image.jpg`, new Buffer(body), 'binary');
           console.log('file saved');
       } else {
           // TODO: handle error
+          console.log('save error')
       }
     });
 
@@ -89,28 +99,28 @@ async function handleEvent(event) {
     // });
 
   }else if (event.type === 'message'){
-    let returnMessage = ''
-    console.log('get message')
+    console.log('message受信')
     //event.message.textに注文番号
     if (event.message.text.indexOf('注文番号確認') >= 0) {
-      returnMessage = '注文番号を確認します。'
       if(event.source.type == 'user') {
 
       }
-      const sqlResult = await Query.checkOrderNumber(event.source.userId,connection)
-      const createMessage = await MessageDesign.createPaymentMessage(sqlResult,PaymentJson)
 
-      return client.replyMessage(event.replyToken, createMessage);
+      //mysqlでデーター取得＞＞結果からJson加工＞＞Jsonをreturn
+      console.log('「注文情報確認」入力確認')
+      const result = await getMessageData(event.source.userId)
+      return client.replyMessage(event.replyToken,result)
     }else{
-      returnMessage = 'メッセージなし'
+
+      const result = [{
+          type: 'text',
+          text: '「' + event.message.text + '」を入力しました。'
+        },
+      ];
+
+      return client.replyMessage(event.replyToken,result)
     }
  
-    
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: returnMessage
-    });
-  
   }else{
     return Promise.resolve(null);
   }
@@ -120,6 +130,7 @@ async function handleEvent(event) {
   
 
 }
+
 
 
 app.listen(PORT);
