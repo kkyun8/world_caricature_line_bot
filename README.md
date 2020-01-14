@@ -18,8 +18,7 @@ https://developers.line.biz/ja/docs/messaging-api/overview/
 
 ### local test↓
 
-    ```
-    $ npm i -g ngrok
+    ```shell
     $ ngrok http 3000
     ```
     
